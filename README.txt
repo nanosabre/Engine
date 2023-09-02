@@ -1,0 +1,1 @@
+This project is poking around to eventually make a DND/TTRPG python program.
