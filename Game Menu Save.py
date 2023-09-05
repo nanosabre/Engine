@@ -68,13 +68,13 @@ class UIElement:
     
     def loadImg(self, file):
         self.surf = pygame.transform.scale(pygame.image.load("Assets" + "\\" + str(file)), (self.rect.width, self.rect.height))
-        print(self.rect.width, self.rect.height)
 
     def loadText(self, dpos = 0):
         self.surf, self.scrollpos = renderText(self.text, self.rect.size, self.scrollpos + dpos)
 
 
 UIList = []
+focused = []
 
 with open("Main Menu.csv", newline='') as menuCSV:
     reader = csv.DictReader(menuCSV)
@@ -90,17 +90,36 @@ while running:
     while waiting:
         pygame.time.Clock().tick(40)
         waiting = True
+        mousePos = pygame.mouse.get_pos()
         for event in pygame.event.get():
             if event.type == pygame.MOUSEWHEEL:
-                UIList[1].loadText(-event.y * 10)
-                waiting = False
+                if len(focused) > 0 and "text" in focused[0].att:
+                    focused[0].loadText(-event.y * 10)
+                    waiting = False
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                UIList[1].layer = 19
-                waiting = False
+                if event.button == 1:
+                    esc = False
+                    for layer in reversed(range(20)):
+                        if len(focused) > 0:
+                            if focused[0].rect.collidepoint(mousePos):
+                                break
+                        for UIE in UIList:
+                            if UIE.layer == layer:
+                                if UIE.rect.collidepoint(mousePos):
+                                    focused = [UIE]
+                                    waiting = False
+                                    esc = True
+                                    break
+                        if esc:
+                            break
+                if event.button == 3:
+                    focused = []
+                    waiting = False
             elif event.type == pygame.QUIT:
                 running = False
                 waiting = False
         
+
     waiting = True
     screen.fill((255, 255, 255))
     print("tick")
@@ -108,10 +127,12 @@ while running:
     #DRAW
     for layer in range(20):
         for UIE in UIList:
-            if UIE.layer == layer:
+            if UIE.layer == layer and UIE not in focused:
                 screen.blit(UIE.surf, UIE.rect)
+    if len(focused) > 0:
+        screen.blit(focused[0].surf, focused[0].rect)
 
-
+    
     #RENDER FRAME
     pygame.display.flip()
 
