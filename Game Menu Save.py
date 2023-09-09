@@ -22,76 +22,52 @@ def renderText(text:str, size:tuple, pos:int = 0, base:pygame.Surface = None, bo
     TYPEF:  FONT OBJECT FOR TEXT
     COLOR:  INT TUPLE FOR FONT COLOR
     """
-    #TERRIFYING HACK TO INSANE BUG
-    base = base.copy()              
-    #EXTRACTS AND ADJUSTS TEXT AREA TO ELEMENT MARGINS
+    if pos < 0:
+        pos = 0     
+    
     width = size[0] - 2*border
     height = size[1] - 2*border
     
-    #STORES THE LAST KNOWN SPACE CHARACTER INDEX
+    base = base.copy()  
+    textPlate = pygame.Surface((width, height), pygame.SRCALPHA, (0, 0, 0, 0))
+
+    lineHeight = typef.get_height()
     holdPos = 0
-    #STORES BEGINNING OF NEW LINE INDEX
     start = 0
-    #LIST STORING EACH LINE OF TEXT AS A SEPARATE SUBSURFACE
     subsurfs = []
-    #ITERATES THROUGH SUBSURFS LIST
     j = 0
-    #ITERATES THROUGH TEXT STRING FOR RENDERING
+ 
     for i in range(len(text)):
-        
-        #SMALL OPTIMIZATION TO STOP RENDERING AFTER REACHING BOTTOM OF MARGIN
-        if j*24*0.9 > pos + height:
+
+        if j*lineHeight > pos + height:
             break
         
-        #SEARCH FOR NEWLINE CHARACTER
-        if text[i] == '\n':
-            #IF NO SUBSURFACE EXISTS FOR THIS INDEX YET
-            if j >= len(subsurfs):
-                subsurfs.append(typef.render(text[start:i], True, color))
-            else:
-                subsurfs[j] = typef.render(text[start:i], True, color)
-            #SETS NEWLINE POSITION AFTER NEWLINE CHARACTER
+        if text[i] == '\n' or i == len(text) - 1:
+            subsurfs.append(typef.render(text[start:i], True, color))
             start = i + 1
-            #SETS NEW WORD POSITION AFTER NEWLINE CHARACTER
             holdPos = i + 1
-            #SETS FOR NEW SUBSURFACE
             j += 1
-        
-        #SEARCH FOR SPACE CHARACTER
         if text[i] == ' ':
-            #IF NO SUBSURFACE EXISTS FOR THIS INDEX YET
-            if j >= len(subsurfs):
-                subsurfs.append(typef.render(text[start:i], True, color))
-            else:
-                subsurfs[j] = typef.render(text[start:i], True, color)
-            #CHECK IF SUBSURFACE IS WIDER THAN TEXT MARGINS
-            if subsurfs[j].get_width() > width:
-                #GOES BACK TO BEGINNING OF PREVIOUS WORD TO GENERATE SUBSURFACE
-                subsurfs[j] = typef.render(text[start:holdPos], True, color)
-                #SETS NEWLINE POSITION AFTER SPACE CHARACTER
-                start = holdPos + 1
-                #SETS NEW WORD POSITION AFTER SPACE CHARACTER
-                i = holdPos + 1
-                #SETS FOR NEW SUBSURFACE
+            lineSize = typef.size(text[start:i])
+            if lineSize[0] > width:
                 j += 1
+                if (j + 1)*lineHeight < pos:
+                    subsurfs.append(None)
+                else:
+                    subsurfs.append(typef.render(text[start:holdPos], True, color)) 
+                start = holdPos + 1
+                i = holdPos + 1   
             else:
-                #SETS NEW WORD POSITION AT SPACE CHARACTER
                 holdPos = i
+
+    if pos > (len(subsurfs) + 1)*lineHeight - height and len(subsurfs)*lineHeight > height:
+        pos = (len(subsurfs) + 1)*lineHeight - height
     
-    #CHECKS IF SCROLL POSITION IS VALID
-    #24 IS FONT SIZE, 0.9 IS THE LINE HEIGHT CONSTANT. MAY MAKE VARIABLE IN FUTURE
-    if pos > len(subsurfs)*24*0.9 - height and len(subsurfs)*24*0.9 > height:
-        #CLAMPS SCROLL POSITION TO PREVENT SCROLLING TOO LOW
-        pos = len(subsurfs)*24*0.9 - height
-    elif pos < 0:
-        #CLAMPS SCROLL POSITION TO PREVENT NEGATIVE SCROLL POSITION
-        pos = 0
-    
-    #DRAWS ALL SUBSURFACES ON TO BACKGROUND SURFACE
     for i in range(len(subsurfs)):
-        base.blit(subsurfs[i], (border, 24*0.9*i - pos + border))
+        if subsurfs[i] is not None:
+            textPlate.blit(subsurfs[i], (0, lineHeight*i - pos))
     
-    #RETURNS GENERATED SURFACE AND ADJUSTED SCROLL POSITION
+    base.blit(textPlate, (border, border))
     return base, pos
 
 
@@ -109,9 +85,11 @@ class UIElement:
         self.name = name
         self.layer = layer
         self.rect = pygame.Rect(pos, size)
+        self.topBorderRect = pygame.Rect(self.rect.topleft, (self.rect.topright[0], self.rect.topright[1] + 25))
         self.att = att
 
         #SETS ELEMENT SURFACE DEPENDING ON IMAGE ATTRIBUTE
+        
         if "image" in att:
             self.surf = self.loadImg(data[0])
         else:
@@ -135,11 +113,12 @@ class UIElement:
     
     #LOADS IMAGE FROM FILE NAME
     def loadImg(self, file):
-        return pygame.transform.scale(pygame.image.load("Assets" + "\\" + str(file)), (self.rect.width, self.rect.height))
+        return pygame.transform.scale(pygame.image.load("Assets" + "\\" + str(file)), (self.rect.width, self.rect.height)).convert_alpha()
 
     #RENDERS SURFACE USING DEFAULT BACKGROUND AND ELEMENT TEXT
     def loadText(self, dpos = 0):
-        self.surf, self.scrollpos = renderText(self.text, self.rect.size, self.scrollpos + dpos, self.background)
+        if not (self.scrollpos == 0 and dpos < 0):
+            self.surf, self.scrollpos = renderText(self.text, self.rect.size, self.scrollpos + dpos, self.background)
 
 #USER INTERFACT ELEMENT OBJECT CONTAINER
 UIList = []
@@ -162,13 +141,15 @@ with open("Main Menu.csv", newline='') as menuCSV:
                                 (int(row['width']), int(row['height'])), 
                                 row['attributes'], data))
 
-
-
 #GAME EXIT CONDITION VARIABLE
 running = True
 
 #GAME EXIT CONDITION VARIABLE
 waiting = False
+mouseLHold = False
+mouseSHold = False
+mouseRHold = False
+coupled = False
 
 #MAIN GAME LOOP
 while running:
@@ -179,6 +160,7 @@ while running:
         #TRACKS MOUSE X, Y ABSOLUTE AND RELATIVE POSITION. ONLY DO ONCE PER CYCLE
         mousePos = pygame.mouse.get_pos()
         mouseRel = pygame.mouse.get_rel()
+        
 
         #PYGAME EVENT SYSTEM LOOP
         for event in pygame.event.get():
@@ -187,7 +169,7 @@ while running:
                 #CHECKS TO SEE OF FOCUSED ELEMENT HAS TEXT
                 if len(focused) > 0 and "text" in focused[0].att:
                     #SCROLLS TEXT BY RERENDERING TEXT
-                    focused[0].loadText(-event.y * 10)
+                    focused[0].loadText(-event.y * 15)
                     #EXITS WAITING LOOP
                     waiting = False
             #MOUSE CLICK EVENT
@@ -198,8 +180,9 @@ while running:
                     #ITERATES THROUGH LAYERS FROM TOP TO BOTTOM SO TOPMOST ELEMENTS ARE SELECTED FIRST
                     for layer in reversed(range(20)):
                         #FOCUSED OBJECT ALWAYS ON TOP, SO IF MOUSE IS INSIDE NOTHING SHOULD HAPPEN
-                        if len(focused) > 0 and focused[0].rect.collidepoint(mousePos):
-                            break
+                        if len(focused) > 0 and focused[0].topBorderRect.collidepoint(mousePos):
+                            coupled = True
+                            waiting = False
                         #ITERATES THROUGH OBJECTS AND FINDS ELEMENTS ON CORRECT LAYER 
                         for UIE in UIList:
                             if UIE.layer == layer and UIE.rect.collidepoint(mousePos):
@@ -213,16 +196,36 @@ while running:
                         #FOR BREAKING OUTER LOOP
                         if esc:
                             break
+                    mouseLHold = True
+                #IF SCROLL CLICK
+                elif event.button == 2:
+                    mouseSHold = True
                 #IF RIGHT CLICK
-                if event.button == 3:
+                elif event.button == 3:
                     #UNFOCUSES ALL ELEMENTS
                     focused = []
                     #EXIT WAITING LOOP
                     waiting = False
+                    mouseRHold = True
+            elif event.type == pygame.MOUSEBUTTONUP:
+                if event.button == 1:
+                    mouseLHold = False
+                    coupled = False
+                elif event.button == 2:
+                    mouseSHold = False
+                elif event.button == 3:
+                    mouseRHold = False
             #CLOSE GAME EVENT
             elif event.type == pygame.QUIT:
                 running = False
                 waiting = False
+        if mouseLHold:
+            if coupled: #len(focused) > 0 and focused[0].rect.collidepoint(mousePos) and coupled:
+                focused[0].rect.x += mouseRel[0]
+                focused[0].rect.y += mouseRel[1]
+                focused[0].topBorderRect.x += mouseRel[0]
+                focused[0].topBorderRect.y += mouseRel[1]
+            waiting = False
     #RESETS WAITING LOOP
     waiting = True
 
@@ -230,7 +233,7 @@ while running:
     screen.fill((255, 255, 255))
 
     #CHEAP DEBUG THING
-    print("tick")
+    #print("tick")
 
     #DRAW ELEMENTS IN ORDER OF LAYER
     for layer in range(20):
