@@ -1,17 +1,17 @@
 import pygame
 import csv
 
+#Parameters
 resolution = [768, 768]
-pygame.init()
+path = "D:\Files\Code\Python\Engine"
 
-#SETS WINDOW TO BE RESIZABLE
+pygame.init()
 screen = pygame.display.set_mode(resolution, pygame.RESIZABLE)
 
-#cd D:\Files\Code\Python\Engine
-
-#INITIALIZES DEFAULT PYGAME FONT
+#Font declarations
 font = pygame.font.SysFont(None, 24)
 
+#Function Delcarations
 def renderText(text:str, size:tuple, pos:int = 0, base:pygame.Surface = None, border:int = 5, typef:pygame.font = font, color:tuple = (0,0,0)):
     """ GENERATES SURFACE WITH BACKGROUND IMAGE AND TEXT BASED ON SCROLLED POSITION. RETURNS OUTPUT SURFACE AND ADJUSTED SCROLL POSITION
     TEXT:   STRING TEXT TO BE RENDERED
@@ -28,7 +28,7 @@ def renderText(text:str, size:tuple, pos:int = 0, base:pygame.Surface = None, bo
     width = size[0] - 2*border
     height = size[1] - 2*border
     
-    base = base.copy()  
+    base = pygame.transform.scale(base.copy(), size)
     textPlate = pygame.Surface((width, height), pygame.SRCALPHA, (0, 0, 0, 0))
 
     lineHeight = typef.get_height()
@@ -42,7 +42,7 @@ def renderText(text:str, size:tuple, pos:int = 0, base:pygame.Surface = None, bo
         if j*lineHeight > pos + height:
             break
         
-        if text[i] == '\n' or i == len(text) - 1:
+        if text[i] == '\n' or i == len(text) + 1:
             subsurfs.append(typef.render(text[start:i], True, color))
             start = i + 1
             holdPos = i + 1
@@ -69,8 +69,16 @@ def renderText(text:str, size:tuple, pos:int = 0, base:pygame.Surface = None, bo
     
     base.blit(textPlate, (border, border))
     return base, pos
+def loadImage(file:str, size:tuple = None, alpha:bool = False):
+    if alpha:
+        surf = pygame.image.load(path + "\\Assets\\" + file).convert_alpha()
+    else:
+        surf = pygame.image.load(path + "\\Assets\\" + file)
+    if size is not None:
+        surf = pygame.transform.scale(surf, size) 
+    return surf
 
-
+#Class Declarations
 class UIElement:
     """ USER INTERFACE ELEMENT CLASS
     NAME:   STRING ELEMENT NAME
@@ -85,40 +93,128 @@ class UIElement:
         self.name = name
         self.layer = layer
         self.rect = pygame.Rect(pos, size)
-        self.topBorderRect = pygame.Rect(self.rect.topleft, (self.rect.topright[0], self.rect.topright[1] + 25))
         self.att = att
+    
+    def resize(self, size):
+        self.rect.size = size
+        self.surf = pygame.transform.scale(self.surf, size)
+    
+    def userInput(self, event):
+        return True
 
-        #SETS ELEMENT SURFACE DEPENDING ON IMAGE ATTRIBUTE
-        
+class UIBackground(UIElement):
+    def __init__(self, name:str, layer:int, pos:tuple, size:tuple, att:str, data):
+        UIElement.__init__(self, name, layer, pos, size, att, data)
+
         if "image" in att:
-            self.surf = self.loadImg(data[0])
+            self.surf = loadImage(data[0], size, True)
         else:
-            self.surf = pygame.Surface(size, pygame.SRCALPHA, (0, 0, 0, 0))
+            try:
+                self.surf = pygame.Surface(size, pygame.SRCALPHA, data[0])
+            except:
+                self.surf = pygame.Surface(size, 0, (255, 0, 128))
+        
+        if "winScale" in att:
+            def update(self, screensize):
+                self.resize(screensize)
+
+class UITextbox(UIElement):
+    def __init__(self, name:str, layer:int, pos:tuple, size:tuple, att:str, data):
+        UIElement.__init__(self, name, layer, pos, size, att, data)
+
+        self.topBorderRect = pygame.Rect(self.rect.topleft, (self.rect.width, 20))
+        self.botBorderRect = pygame.Rect((self.rect.bottomleft[0], self.rect.bottomleft[1] - 20), (self.rect.width, 20))
+        self.moving = False
+        self.resizing = False
+
+        if "image" in att:
+            self.background = loadImage(data[0], size, True)
         
         #INITIAL TEXT SURFACE RENDERING
-        if "text" in att:
+        if "textFile " in att:
             #STORES TEXT FROM FILE
             with open("Assets" + "\\" + data[1], 'r') as textFile:
                 self.text = textFile.read()
             #SETS DEFAULT SCROLL POSITION
             self.scrollpos = 0
-            #CREATES BACKGROUND SURFFACE AND LOADS IMAGE
-            self.background = self.surf 
             #INITIAL TEXT RENDER
             self.loadText()
-    
-    #RESIZES ELEMENT
-    def resize(self, size):
-        self.rect = pygame.Rect(self.rect.x, self.rect.y, size[0], size[1])
-    
-    #LOADS IMAGE FROM FILE NAME
-    def loadImg(self, file):
-        return pygame.transform.scale(pygame.image.load("Assets" + "\\" + str(file)), (self.rect.width, self.rect.height)).convert_alpha()
+
+        else:
+            self.text = data[1]
+            textSurf = font.render(self.text, True, (0, 0, 0))
+            self.surf.blit(textSurf, (5, 5))
 
     #RENDERS SURFACE USING DEFAULT BACKGROUND AND ELEMENT TEXT
     def loadText(self, dpos = 0):
         if not (self.scrollpos == 0 and dpos < 0):
             self.surf, self.scrollpos = renderText(self.text, self.rect.size, self.scrollpos + dpos, self.background)
+
+    def resize(self, size, inc = False):
+        if inc == True:
+            size = (self.rect.size[0] + size[0], self.rect.size[1] + size[1])
+        if size[0] < 10:
+            size = (10, size[1])
+        if size[1] < 10:
+            size = (size[0], 10)
+        self.rect.size = size
+        self.topBorderRect.width = size[0]
+        self.botBorderRect.width = size[0]
+        self.botBorderRect.y = self.rect.bottomleft[1] - 20
+        self.surf = pygame.transform.scale(self.surf, size)
+        #self.background = pygame.transform.scale(self.background, size)      
+    
+    def nudge(self, relPos):
+        self.rect.x += relPos[0]
+        self.rect.y += relPos[1]
+        self.topBorderRect.x += relPos[0]
+        self.topBorderRect.y += relPos[1]
+        self.botBorderRect.x += relPos[0]
+        self.botBorderRect.y += relPos[1]
+        if self.rect.x < 0:
+            self.rect.x = 0
+            self.topBorderRect.x = 0
+            self.botBorderRect.x = 0
+        elif self.rect.x > screen.get_size()[0]:
+            self.rect.x = screen.get_size()[0] - 5
+            self.topBorderRect.x =screen.get_size()[0] - 5
+            self.botBorderRect.x =screen.get_size()[0] - 5
+        if self.rect.y < 0:
+            self.rect.y = 0
+            self.topBorderRect.y = 0
+            self.botBorderRect.x =screen.get_size()[0] - 5
+        elif self.rect.y > screen.get_size()[1]:
+            self.rect.y = screen.get_size()[1] - 5
+            self.topBorderRect.y = screen.get_size()[1] - 5
+            self.botBorderRect.y = screen.get_size()[1] - 5
+
+    def userInput(self, event):
+        if self.moving:
+            self.nudge(LHold.rel)
+        if self.resizing:
+            self.resize((0, LHold.rel[1]), True)
+            self.loadText()
+        if event.type == pygame.MOUSEWHEEL:
+            self.loadText(-event.y*10)
+        elif event.type == pygame.USEREVENT:
+            if event == LHold:
+                if self.botBorderRect.collidepoint(LHold.pos):
+                    self.resizing = True
+                elif self.topBorderRect.collidepoint(LHold.pos):
+                    self.moving = True
+        elif event.type == pygame.MOUSEBUTTONUP:
+            if event.button == 1:
+                self.moving = False
+                self.resizing = False
+        else:
+            return True
+        return False
+
+
+    
+        
+#Class UIButton:
+#Class UILabel:
 
 #USER INTERFACT ELEMENT OBJECT CONTAINER
 UIList = []
@@ -132,14 +228,27 @@ with open("Main Menu.csv", newline='') as menuCSV:
     reader = csv.DictReader(menuCSV)
     for row in reader:
         #STORES DATA INTO LIST
-        data = [row['data1'], row['data2'], row['data3']]
+        data = [row['data0'], row['data1'], row['data2'], row['data3']]
 
         #POPULATES UI LIST WITH INSTANCES CREATED FROM CSV FILE INFO
-        UIList.append(UIElement(row['name'], 
-                                int(row['layer']),
-                                (int(row['x']), int(row['y'])), 
-                                (int(row['width']), int(row['height'])), 
-                                row['attributes'], data))
+        if "background" in row['name']:
+            UIList.append(UIBackground(
+                row['name'],
+                int(row['layer']),
+                (int(row['x']), int(row['y'])),
+                (int(row['height']), int(row['height'])),
+                 row['attributes'],
+                 data
+            ))
+        if "textbox" in row['name']:
+            UIList.append(UITextbox(
+                row['name'],
+                int(row['layer']),
+                (int(row['x']), int(row['y'])),
+                (int(row['height']), int(row['height'])),
+                 row['attributes'],
+                 data
+            ))
 
 #GAME EXIT CONDITION VARIABLE
 running = True
@@ -147,9 +256,14 @@ running = True
 #GAME EXIT CONDITION VARIABLE
 waiting = False
 mouseLHold = False
-mouseSHold = False
+mouseMHold = False
 mouseRHold = False
-coupled = False
+
+LHold = pygame.event.Event(pygame.USEREVENT, attr1="LHold", rel=(0, 0), pos=(0, 0))
+MHold = pygame.event.Event(pygame.USEREVENT, attr1="MHold", rel=(0, 0), pos=(0, 0))
+RHold = pygame.event.Event(pygame.USEREVENT, attr1="RHold", rel=(0, 0), pos=(0, 0))
+
+userEvents = [pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN, pygame.MOUSEBUTTONUP, pygame.KEYUP, pygame.MOUSEWHEEL, pygame.USEREVENT]
 
 #MAIN GAME LOOP
 while running:
@@ -160,46 +274,32 @@ while running:
         #TRACKS MOUSE X, Y ABSOLUTE AND RELATIVE POSITION. ONLY DO ONCE PER CYCLE
         mousePos = pygame.mouse.get_pos()
         mouseRel = pygame.mouse.get_rel()
-        
+
 
         #PYGAME EVENT SYSTEM LOOP
         for event in pygame.event.get():
-            #SCROLL WHEEN INPUT
-            if event.type == pygame.MOUSEWHEEL:
-                #CHECKS TO SEE OF FOCUSED ELEMENT HAS TEXT
-                if len(focused) > 0 and "text" in focused[0].att:
-                    #SCROLLS TEXT BY RERENDERING TEXT
-                    focused[0].loadText(-event.y * 15)
-                    #EXITS WAITING LOOP
-                    waiting = False
+
+            if event.type in userEvents:
+                    waiting = UIE.userInput(event)
+
             #MOUSE CLICK EVENT
-            elif event.type == pygame.MOUSEBUTTONDOWN:
+            if event.type == pygame.MOUSEBUTTONDOWN:
                 #IF LEFT CLICK
                 if event.button == 1:
                     esc = False
-                    #ITERATES THROUGH LAYERS FROM TOP TO BOTTOM SO TOPMOST ELEMENTS ARE SELECTED FIRST
                     for layer in reversed(range(20)):
-                        #FOCUSED OBJECT ALWAYS ON TOP, SO IF MOUSE IS INSIDE NOTHING SHOULD HAPPEN
-                        if len(focused) > 0 and focused[0].topBorderRect.collidepoint(mousePos):
-                            coupled = True
-                            waiting = False
-                        #ITERATES THROUGH OBJECTS AND FINDS ELEMENTS ON CORRECT LAYER 
                         for UIE in UIList:
                             if UIE.layer == layer and UIE.rect.collidepoint(mousePos):
-                                #SET SELECTED OBJECT TO BE FOCUSED
                                 focused = [UIE]
-                                #EXIT WAITING LOOP
                                 waiting = False
-                                #EXIT LAYER LOOP
                                 esc = True
                                 break
-                        #FOR BREAKING OUTER LOOP
                         if esc:
                             break
                     mouseLHold = True
                 #IF SCROLL CLICK
                 elif event.button == 2:
-                    mouseSHold = True
+                    mouseMHold = True
                 #IF RIGHT CLICK
                 elif event.button == 3:
                     #UNFOCUSES ALL ELEMENTS
@@ -210,22 +310,33 @@ while running:
             elif event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1:
                     mouseLHold = False
-                    coupled = False
                 elif event.button == 2:
-                    mouseSHold = False
+                    mouseMHold = False
                 elif event.button == 3:
                     mouseRHold = False
+            elif event.type == pygame.VIDEORESIZE or event.type == pygame.VIDEOEXPOSE:
+                for UIE in UIList:
+                    if "winScale" in UIE.att:
+                        UIE.resize(screen.get_size())
+                waiting = False
             #CLOSE GAME EVENT
             elif event.type == pygame.QUIT:
                 running = False
                 waiting = False
+
         if mouseLHold:
-            if coupled: #len(focused) > 0 and focused[0].rect.collidepoint(mousePos) and coupled:
-                focused[0].rect.x += mouseRel[0]
-                focused[0].rect.y += mouseRel[1]
-                focused[0].topBorderRect.x += mouseRel[0]
-                focused[0].topBorderRect.y += mouseRel[1]
-            waiting = False
+            pygame.event.post(LHold)
+            LHold.rel = mouseRel
+            LHold.pos = mousePos
+        if mouseMHold:
+            pygame.event.post(MHold)
+            LHold.rel = mouseRel
+            LHold.pos = mousePos
+        if mouseRHold:
+            pygame.event.post(RHold)
+            RHold.rel = mouseRel
+            RHold.pos = mousePos
+    
     #RESETS WAITING LOOP
     waiting = True
 
