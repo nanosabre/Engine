@@ -42,16 +42,16 @@ def renderText(text:str, size:tuple, pos:int = 0, base:pygame.Surface = None, bo
         if j*lineHeight > pos + height:
             break
         
-        if text[i] == '\n' or i == len(text) + 1:
-            subsurfs.append(typef.render(text[start:i], True, color))
+        if text[i] == '\n' or i == len(text) - 1:
+            subsurfs.append(typef.render(text[start:i + (i == len(text) - 1)], True, color))
             start = i + 1
             holdPos = i + 1
             j += 1
-        if text[i] == ' ':
+        elif text[i] == ' ':
             lineSize = typef.size(text[start:i])
             if lineSize[0] > width:
                 j += 1
-                if (j + 1)*lineHeight < pos:
+                if (j)*lineHeight < pos and (j)*lineHeight + height < pos:
                     subsurfs.append(None)
                 else:
                     subsurfs.append(typef.render(text[start:holdPos], True, color)) 
@@ -63,9 +63,12 @@ def renderText(text:str, size:tuple, pos:int = 0, base:pygame.Surface = None, bo
     if pos > (len(subsurfs) + 1)*lineHeight - height and len(subsurfs)*lineHeight > height:
         pos = (len(subsurfs) + 1)*lineHeight - height
     
+    #count = 0
     for i in range(len(subsurfs)):
         if subsurfs[i] is not None:
             textPlate.blit(subsurfs[i], (0, lineHeight*i - pos))
+    #        count += 1
+    #print(count)
     
     base.blit(textPlate, (border, border))
     return base, pos
@@ -77,6 +80,13 @@ def loadImage(file:str, size:tuple = None, alpha:bool = False):
     if size is not None:
         surf = pygame.transform.scale(surf, size) 
     return surf
+
+
+#"LIST" OF ONE ELEMENT REPRESENTING THE ELEMENT FOCUSED BY USER
+# ITS A LIST SO PYTHON STORES JUST THE POINTER FOR LESS MEM USAGE I THINK?
+focused = []
+
+
 
 #Class Declarations
 class UIElement:
@@ -94,6 +104,7 @@ class UIElement:
         self.layer = layer
         self.rect = pygame.Rect(pos, size)
         self.att = att
+        self.hidden = False
     
     def resize(self, size):
         self.rect.size = size
@@ -124,11 +135,17 @@ class UITextbox(UIElement):
 
         self.topBorderRect = pygame.Rect(self.rect.topleft, (self.rect.width, 20))
         self.botBorderRect = pygame.Rect((self.rect.bottomleft[0], self.rect.bottomleft[1] - 20), (self.rect.width, 20))
+        self.focused = False
         self.moving = False
         self.resizing = False
 
-        if "image" in att:
+        if "image " in att:
             self.background = loadImage(data[0], size, True)
+        else:
+            try:
+                self.surf = pygame.Surface(size, pygame.SRCALPHA, data[0])
+            except:
+                self.surf = pygame.Surface(size, 0, (255, 0, 128))
         
         #INITIAL TEXT SURFACE RENDERING
         if "textFile " in att:
@@ -195,13 +212,18 @@ class UITextbox(UIElement):
             self.resize((0, LHold.rel[1]), True)
             self.loadText()
         if event.type == pygame.MOUSEWHEEL:
-            self.loadText(-event.y*10)
+            self.loadText(-event.y*20)
         elif event.type == pygame.USEREVENT:
             if event == LHold:
                 if self.botBorderRect.collidepoint(LHold.pos):
                     self.resizing = True
                 elif self.topBorderRect.collidepoint(LHold.pos):
                     self.moving = True
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:
+                self.focused = True
+            elif event.button == 3:
+                self.focused = False
         elif event.type == pygame.MOUSEBUTTONUP:
             if event.button == 1:
                 self.moving = False
@@ -210,18 +232,44 @@ class UITextbox(UIElement):
             return True
         return False
 
+class UIButton(UIElement):
+    def __init__(self, name:str, layer:int, pos:tuple, size:tuple, att:str, data):
+        UIElement.__init__(self, name, layer, pos, size, att, data)
 
-    
-        
-#Class UIButton:
+        focused = False
+
+        if "image " in att:
+            self.surf = loadImage(data[0], size, True)
+        else:
+            try:
+                self.surf = pygame.Surface(size, pygame.SRCALPHA, data[0])
+            except:
+                self.surf = pygame.Surface(size, 0, (255, 0, 128))
+
+        if "text " in att:
+            self.text = data[1]
+            textSurf = font.render(self.text, True, (0, 0, 0))
+            self.surf.blit(textSurf, (5, 5))
+
+    def userInput(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:
+                self.focused = True
+        elif event.type == pygame.MOUSEBUTTONUP:
+            if event.button == 1:
+                self.focused = False
+                if self.rect.collidepoint(event.pos):
+                    print("click!")
+        else:
+            return True
+        return False
+
+
+
 #Class UILabel:
 
 #USER INTERFACT ELEMENT OBJECT CONTAINER
 UIList = []
-
-#"LIST" OF ONE ELEMENT REPRESENTING THE ELEMENT FOCUSED BY USER
-# ITS A LIST SO PYTHON STORES JUST THE POINTER FOR LESS MEM USAGE I THINK?
-focused = []
 
 #PULLS OBJECT INFORMATION OUT OF CSV
 with open("Main Menu.csv", newline='') as menuCSV:
@@ -240,8 +288,17 @@ with open("Main Menu.csv", newline='') as menuCSV:
                  row['attributes'],
                  data
             ))
-        if "textbox" in row['name']:
+        elif "textbox" in row['name']:
             UIList.append(UITextbox(
+                row['name'],
+                int(row['layer']),
+                (int(row['x']), int(row['y'])),
+                (int(row['height']), int(row['height'])),
+                 row['attributes'],
+                 data
+            ))
+        elif "button" in row['name']:
+            UIList.append(UIButton(
                 row['name'],
                 int(row['layer']),
                 (int(row['x']), int(row['y'])),
@@ -280,22 +337,32 @@ while running:
         for event in pygame.event.get():
 
             if event.type in userEvents:
+                skip = False
+                for UIE in focused:
                     waiting = UIE.userInput(event)
+                    if UIE.rect.collidepoint(mousePos):
+                        skip = True
+                if not skip and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    for layer in reversed(range(20)):
+                        esc = False
+                        for UIE in reversed(UIList):
+                            if UIE.layer == layer and UIE.rect.collidepoint(mousePos) and UIE not in focused:
+                                waiting = UIE.userInput(event)
+                                if hasattr(UIE, 'focused'):
+                                    if UIE.focused:
+                                        focused = [UIE]
+                                    else:
+                                        focused = []
+                                esc = True
+                                break
+                        if esc:
+                            break
+
 
             #MOUSE CLICK EVENT
             if event.type == pygame.MOUSEBUTTONDOWN:
                 #IF LEFT CLICK
                 if event.button == 1:
-                    esc = False
-                    for layer in reversed(range(20)):
-                        for UIE in UIList:
-                            if UIE.layer == layer and UIE.rect.collidepoint(mousePos):
-                                focused = [UIE]
-                                waiting = False
-                                esc = True
-                                break
-                        if esc:
-                            break
                     mouseLHold = True
                 #IF SCROLL CLICK
                 elif event.button == 2:
@@ -350,11 +417,11 @@ while running:
     for layer in range(20):
         for UIE in UIList:
             #EXCLUDE FOCUSED OBJECT TO PREVENT DOUBLE-DRAWING
-            if UIE.layer == layer and UIE not in focused:
+            if UIE.layer == layer and not UIE.hidden and UIE not in focused:
                 screen.blit(UIE.surf, UIE.rect)
     #DRAW FOCUSED OBJECT ON TOP
-    if len(focused) > 0:
-        screen.blit(focused[0].surf, focused[0].rect)
+    for UIE in focused:
+        screen.blit(UIE.surf, UIE.rect)
 
 
     #RENDER FRAME ON SCREEN
