@@ -1,5 +1,5 @@
 name,layer,x,y,width,height,attributes,data0,data1,data2,data3
 background,1,0,0,768,768,image winScale,Menu Back.png,NONE,NONE, NONE
 textbox1,2,20,270,732,416,textFile image movable ,Back2.png,Text2.txt,32, NONE
-textbox2,2,220,270,732,416,textFile image movable ,Back2.png,Text2.txt,32, NONE
-button1,2,20,50,50,100,text image ,Back2.png,BUTTON!,32, NONE
+textbox2,2,220,270,732,416,textFile image movable hidden ,Back2.png,Text2.txt,32, NONE
+button1,1,20,50,50,100,text image ,Back2.png,BUTTON!,32,textbox2
