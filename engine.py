@@ -212,15 +212,60 @@ class UITextBox(UIElement):
                 if self.resizing:
                     self.resize((0, event.rel[1]), True)
                     self.loadText()
+                    self.botBorderRect.y += LHold.rel[1]
                 if self.botBorderRect.collidepoint(event.pos):
                     self.resizing = True
                 elif self.topBorderRect.collidepoint(event.pos):
                     self.moving = True
+                else:
+                    return False
+        else:
+            return False
+        return True
+class UIButton(UIElement):
+    def __init__(self, rect, layer, att:str, func, imgFile = None, txt = None):
+        UIElement.__init__(self, rect, layer, att)
+        self.txt = txt
+        self.pressed = False
+        self.func = func
+        self.focused = False
+
+        if "image" in att:
+            self.surf = loadImage(imgFile, rect.size, True)
+        else:
+            try:
+                self.surf = pygame.Surface(rect.size, pygame.SRCALPHA, imgFile)
+            except:
+                self.surf = pygame.Surface(rect.size, 0, (255, 0, 128))
+        
+        if "text" in att:
+            self.surf.blit(defaultFont.render(self.txt, True, (0, 0, 0)), (5, 5))
+
+    def userInput(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1 and self.rect.collidepoint(event.pos):
+                self.pressed = True
+        elif event.type == pygame.MOUSEBUTTONUP:
+            if event.button == 1 and self.rect.collidepoint(event.pos):
+                self.pressed = False
+                self.func()
         else:
             return False
         return True
 
-def inputStep(UIList):
+class UIContainer:
+    def __init__(self, UIList):
+        self.UIList = UIList
+    
+    def addUIE(self, UIE):
+        if UIE not in self.UIList:
+            self.UIList.append(UIE)
+
+    def remUIE(self, UIE):
+        if UIE in self.UIList:
+            self.UIList.remove(UIE)
+
+def inputStep(UIC:UIContainer):
     pygame.time.Clock().tick(30)
         
     #TRACKS MOUSE X, Y ABSOLUTE AND RELATIVE POSITION. ONLY DO ONCE PER CYCLE
@@ -236,10 +281,20 @@ def inputStep(UIList):
     for event in pygame.event.get():
 
         if event.type in userEvents:
+            hasFocus = False
             for layer in reversed(range(maxLayers)):
-                for UIE in UIList:
+                for UIE in reversed(UIC.UIList):
                     if UIE.layer == layer and UIE.active:
-                        update += UIE.userInput(event)
+                        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and hasattr(UIE, "focused"):
+                            if not hasFocus:
+                                print("hasfoc")
+                                update += UIE.userInput(event)
+                                hasFocus = UIE.focused
+                            else:
+                                UIE.focused = False
+                        else:
+                            update += UIE.userInput(event)
+                        
         if event == LHold:
             LHPost = True
         elif event == MHold:
@@ -273,7 +328,7 @@ def inputStep(UIList):
             elif event.button == 3:
                 RHPost = False
         elif event.type == pygame.VIDEORESIZE or event.type == pygame.VIDEOEXPOSE:
-            for UIE in UIList:
+            for UIE in UIC.UIList:
                 if "winScale" in UIE.att:
                     UIE.resize(screen.get_size())
                     return True, False
@@ -298,12 +353,12 @@ def inputStep(UIList):
 
     return True, True
 
-def renderStep(UIList):
+def renderStep(UIC:UIContainer):
     #SCREEN BACKGROUND COLOR
     screen.fill((0, 255, 255))
 
     for layer in range(maxLayers):
-        for UIE in UIList:
+        for UIE in UIC.UIList:
             if UIE.layer == layer and UIE.active:
                 screen.blit(UIE.surf, UIE.rect)
     #RENDER FRAME ON SCREEN
