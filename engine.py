@@ -19,7 +19,13 @@ RHold = pygame.event.Event(pygame.USEREVENT, attr1="RHold", rel=(0, 0), pos=(0, 
 
 userEvents = [pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN, pygame.MOUSEBUTTONUP, pygame.KEYUP, pygame.MOUSEWHEEL, pygame.USEREVENT]
 
-output = {"waiting" : True}
+#output = {"waiting" : True}
+
+def activateMenu(UIC, active):
+    if active is not None:
+        active.deactivate()
+    UIC.activate()
+    return UIC
 
 #Function Delcarations
 def renderText(text:str, size:tuple, pos:int = 0, base:pygame.Surface = None, border:int = 5, typef:pygame.font = defaultFont, color:tuple = (0,0,0)):
@@ -98,10 +104,13 @@ class UIElement():
         self.layer = layer
         self.att = att
 
+        self.active = False
+
+    def load(self):
         self.active = True
 
-        if "inactive " in att:
-            self.active = False
+    def unload(self):
+        self.active = False
 
     def userInput(self, event):
         return False
@@ -109,15 +118,22 @@ class UIElement():
 class UIBackground(UIElement):
     def __init__(self, rect, layer, att:str, imgFile):
         UIElement.__init__(self, rect, layer, att)
-
-        if "image" in att:
-            self.surf = loadImage(imgFile, rect.size, True)
+        self.imgFile = imgFile
+        
+    def load(self):
+        self.active = True
+        if "image" in self.att:
+            self.surf = loadImage(self.imgFile, self.rect.size, True)
         else:
             try:
-                self.surf = pygame.Surface(rect.size, pygame.SRCALPHA, imgFile)
+                self.surf = pygame.Surface(self.rect.size, pygame.SRCALPHA, self.imgFile)
             except:
-                self.surf = pygame.Surface(rect.size, 0, (255, 0, 128))
-        
+                self.surf = pygame.Surface(self.rect.size, 0, (255, 0, 128))
+    
+    def unload(self):
+        self.active = False
+        self.surf = None
+
     def resize(self, size):
         self.rect.size = size
         self.surf = pygame.transform.scale(self.surf, size)
@@ -129,28 +145,37 @@ class UITextBox(UIElement):
         self.focused = False
         self.moving = False
         self.resizing = False
-
-        if "image" in att:
-            self.background = loadImage(imgFile, rect.size, True)
+        self.imgFile = imgFile
+        self.textRead = txt
+    
+    def load(self):
+        self.active = True
+        if "image" in self.att:
+            self.background = loadImage(self.imgFile, self.rect.size, True)
         else:
             try:
-                self.background = pygame.Surface(rect.size, pygame.SRCALPHA, imgFile)
+                self.background = pygame.Surface(self.rect.size, pygame.SRCALPHA, self.imgFile)
             except:
-                self.background = pygame.Surface(rect.size, 0, (255, 0, 128))
-        #INITIAL TEXT SURFACE RENDERING
-        if "textFile " in att:
+                self.background = pygame.Surface(self.rect.size, 0, (255, 0, 128))
+            #INITIAL TEXT SURFACE RENDERING
+        if "textFile " in self.att:
             #STORES TEXT FROM FILE
-            with open("Assets" + "\\" + txt, 'r') as textFile:
+            with open("Assets" + "\\" + self.textRead, 'r') as textFile:
                 self.text = textFile.read()
             #SETS DEFAULT SCROLL POSITION
             self.scrollpos = 0
             #INITIAL TEXT RENDER
             self.loadText()
-
         else:
-            self.text = txt
+            self.text = self.textRead
             textSurf = defaultFont.render(self.text, True, (0, 0, 0))
             self.surf.blit(textSurf, (5, 5))
+
+    def unload(self):
+        self.active = False
+        self.background = None
+        self.surf = None
+        self.text = None
 
     #RENDERS SURFACE USING DEFAULT BACKGROUND AND ELEMENT TEXT
     def loadText(self, dpos = 0):
@@ -225,21 +250,29 @@ class UITextBox(UIElement):
 class UIButton(UIElement):
     def __init__(self, rect, layer, att:str, func, imgFile = None, txt = None):
         UIElement.__init__(self, rect, layer, att)
-        self.txt = txt
+        self.text = txt
         self.pressed = False
         self.func = func
         self.focused = False
+        self.imgFile = imgFile
 
-        if "image" in att:
-            self.surf = loadImage(imgFile, rect.size, True)
+    def load(self):
+        self.active = True
+        if "image" in self.att:
+            self.surf = loadImage(self.imgFile, self.rect.size, True)
         else:
             try:
-                self.surf = pygame.Surface(rect.size, pygame.SRCALPHA, imgFile)
+                self.surf = pygame.Surface(self.rect.size, pygame.SRCALPHA, self.imgFile)
             except:
-                self.surf = pygame.Surface(rect.size, 0, (255, 0, 128))
+                self.surf = pygame.Surface(self.rect.size, 0, (255, 0, 128))
         
-        if "text" in att:
-            self.surf.blit(defaultFont.render(self.txt, True, (0, 0, 0)), (5, 5))
+        if "text" in self.att:
+            self.surf.blit(defaultFont.render(self.text, True, (0, 0, 0)), (5, 5))
+
+    def unload(self):
+        self.active = False
+        self.surf = None
+
 
     def userInput(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN:
@@ -256,14 +289,26 @@ class UIButton(UIElement):
 class UIContainer:
     def __init__(self, UIList):
         self.UIList = UIList
+        self.active = False
     
     def addUIE(self, UIE):
         if UIE not in self.UIList:
             self.UIList.append(UIE)
+            
 
     def remUIE(self, UIE):
         if UIE in self.UIList:
             self.UIList.remove(UIE)
+    
+    def activate(self):
+        self.active = True
+        for UIE in self.UIList:
+            UIE.load()
+    
+    def deactivate(self):
+        self.active = False
+        for UIE in self.UIList:
+            UIE.unload()
 
 def inputStep(UIC:UIContainer):
     pygame.time.Clock().tick(30)
@@ -279,7 +324,6 @@ def inputStep(UIC:UIContainer):
     update = False
 
     for event in pygame.event.get():
-
         if event.type in userEvents:
             hasFocus = False
             for layer in reversed(range(maxLayers)):
@@ -287,7 +331,6 @@ def inputStep(UIC:UIContainer):
                     if UIE.layer == layer and UIE.active:
                         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and hasattr(UIE, "focused"):
                             if not hasFocus:
-                                print("hasfoc")
                                 update += UIE.userInput(event)
                                 hasFocus = UIE.focused
                             else:
@@ -329,12 +372,11 @@ def inputStep(UIC:UIContainer):
                 RHPost = False
         elif event.type == pygame.VIDEORESIZE or event.type == pygame.VIDEOEXPOSE:
             for UIE in UIC.UIList:
-                if "winScale" in UIE.att:
+                if "winScale" in UIE.att and UIE.active:
                     UIE.resize(screen.get_size())
-                    return True, False
-                    #MOUSE CLICK EVENT
-        elif event.type == pygame.QUIT:
             return False, False
+        elif event.type == pygame.QUIT:
+            return True, False
     if LHPost:
         pygame.event.post(LHold)
         LHold.rel = mouseRel
@@ -349,13 +391,15 @@ def inputStep(UIC:UIContainer):
         RHold.pos = mousePos
     
     if update:
-        return True, False
+        return False, False
 
-    return True, True
+    return False, True
 
 def renderStep(UIC:UIContainer):
     #SCREEN BACKGROUND COLOR
     screen.fill((0, 255, 255))
+    if not UIC.active:
+        return True, False
 
     for layer in range(maxLayers):
         for UIE in UIC.UIList:
