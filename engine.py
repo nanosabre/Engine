@@ -12,6 +12,7 @@ path = "D:\Files\Code\Python\Engine"
 resolution = [768, 768]
 maxLayers = 20
 screen = pygame.display.set_mode(resolution, pygame.RESIZABLE)
+winsize = screen.get_rect().size
 
 LHold = pygame.event.Event(pygame.USEREVENT, attr1="LHold", rel=(0, 0), pos=(0, 0))
 MHold = pygame.event.Event(pygame.USEREVENT, attr1="MHold", rel=(0, 0), pos=(0, 0))
@@ -103,8 +104,20 @@ class UIElement():
         self.defLayer = layer
         self.layer = layer
         self.att = att
+        self.parent = None
+        self.surf = None
 
         self.active = False
+    def nudge(self, relpos):
+        self.rect.topleft = (self.rect.x + relpos[0], self.rect.y + relpos[1])
+
+    def resize(self, size, inc = False): ##TODO TODO
+        if inc:
+            size = (self.rect.size[0] + size[0], self.rect.size[1] + size[1])
+        self.rect.size = size
+
+        if self.surf is not None:
+            self.surf = pygame.transform.scale(self.surf, size)
 
     def load(self):
         self.active = True
@@ -114,7 +127,7 @@ class UIElement():
 
     def userInput(self, event):
         return False
-    
+
 class UIBackground(UIElement):
     def __init__(self, rect, layer, att:str, imgFile):
         UIElement.__init__(self, rect, layer, att)
@@ -129,25 +142,24 @@ class UIBackground(UIElement):
                 self.surf = pygame.Surface(self.rect.size, pygame.SRCALPHA, self.imgFile)
             except:
                 self.surf = pygame.Surface(self.rect.size, 0, (255, 0, 128))
-    
-    def unload(self):
-        self.active = False
-        self.surf = None
-
-    def resize(self, size):
-        self.rect.size = size
-        self.surf = pygame.transform.scale(self.surf, size)
 class UITextBox(UIElement):
     def __init__(self, rect, layer, att:str, imgFile = None, txt = None):
         UIElement.__init__(self, rect, layer, att)
-        self.topBorderRect = pygame.Rect(self.rect.topleft, (self.rect.width, 20))
-        self.botBorderRect = pygame.Rect((self.rect.bottomleft[0], self.rect.bottomleft[1] - 20), (self.rect.width, 20))
         self.focused = False
-        self.moving = False
-        self.resizing = False
         self.imgFile = imgFile
         self.textRead = txt
+        self.scrollpos = 0
     
+    def resize(self, size, inc = False):
+        if inc:
+            size = (self.rect.size[0] + size[0], self.rect.size[1] + size[1])
+        self.rect.size = size
+
+        if self.surf is not None:
+            self.background = pygame.transform.scale(self.background, size)
+
+        self.loadText(self.scrollpos)        
+
     def load(self):
         self.active = True
         if "image" in self.att:
@@ -167,83 +179,26 @@ class UITextBox(UIElement):
             #INITIAL TEXT RENDER
             self.loadText()
         else:
-            self.text = self.textRead
             textSurf = defaultFont.render(self.text, True, (0, 0, 0))
             self.surf.blit(textSurf, (5, 5))
+
+    def addText(self, text):
+        self.text = text
+        self.loadText()
 
     def unload(self):
         self.active = False
         self.background = None
         self.surf = None
-        self.text = None
 
     #RENDERS SURFACE USING DEFAULT BACKGROUND AND ELEMENT TEXT
     def loadText(self, dpos = 0):
         if not (self.scrollpos == 0 and dpos < 0):
             self.surf, self.scrollpos = renderText(self.text, self.rect.size, self.scrollpos + dpos, self.background)
 
-    def resize(self, size, inc = False): ##TODO TODO
-        if inc == True:
-            size = (self.rect.size[0] + size[0], self.rect.size[1] + size[1])
-        if size[0] < 10:
-            size = (10, size[1])
-        if size[1] < 10:
-            size = (size[0], 10)
-        self.rect.size = size
-
-    def nudge(self, relPos):
-        self.rect.x += relPos[0]
-        self.rect.y += relPos[1]
-        self.topBorderRect.x += relPos[0]
-        self.topBorderRect.y += relPos[1]
-        self.botBorderRect.x += relPos[0]
-        self.botBorderRect.y += relPos[1]
-        if self.rect.x < 0:
-            self.rect.x = 0
-            self.topBorderRect.x = 0
-            self.botBorderRect.x = 0
-        if self.rect.y < 0:
-            self.rect.y = 0
-            self.topBorderRect.y = 0
-            self.botBorderRect.x = 0
-
     def userInput(self, event):
-        
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 1:
-                if self.rect.collidepoint(event.pos):
-                    self.focused = True
-                    self.layer = maxLayers-1
-                    print("focused")
-                else:
-                    print("release")
-                    self.focused = False
-                    self.layer = self.defLayer
-            elif event.button == 3:
-                self.focused = False
-                self.layer = self.defLayer
-        if not self.focused:
-            return False
-        if event.type == pygame.MOUSEBUTTONUP:
-            if event.button == 1:
-                self.moving = False
-                self.resizing = False
-        elif event.type == pygame.MOUSEWHEEL:
+        if event.type == pygame.MOUSEWHEEL:
             self.loadText(-event.y*20)
-        elif event.type == pygame.USEREVENT:
-            if event == LHold:
-                if self.moving:
-                    self.nudge(event.rel)
-                if self.resizing:
-                    self.resize((0, event.rel[1]), True)
-                    self.loadText()
-                    self.botBorderRect.y += LHold.rel[1]
-                if self.botBorderRect.collidepoint(event.pos):
-                    self.resizing = True
-                elif self.topBorderRect.collidepoint(event.pos):
-                    self.moving = True
-                else:
-                    return False
         else:
             return False
         return True
@@ -262,7 +217,8 @@ class UIButton(UIElement):
             self.surf = loadImage(self.imgFile, self.rect.size, True)
         else:
             try:
-                self.surf = pygame.Surface(self.rect.size, pygame.SRCALPHA, self.imgFile)
+                self.surf = pygame.Surface(self.rect.size, pygame.SRCALPHA)
+                self.surf.fill(self.imgFile)
             except:
                 self.surf = pygame.Surface(self.rect.size, 0, (255, 0, 128))
         
@@ -272,37 +228,155 @@ class UIButton(UIElement):
     def unload(self):
         self.active = False
         self.surf = None
-
-
+    
     def userInput(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1 and self.rect.collidepoint(event.pos):
-                self.pressed = True
+                if not self.focused:
+                    self.focused = True
+                    return False
+                else:
+                    self.pressed = True
         elif event.type == pygame.MOUSEBUTTONUP:
-            if event.button == 1 and self.rect.collidepoint(event.pos):
+            if event.button == 1 and self.rect.collidepoint(event.pos) and self.focused:
                 self.pressed = False
                 self.func()
         else:
             return False
         return True
+class UIPanelMover(UIElement):
+    def __init__(self, rect, layer, att):
+        UIElement.__init__(self, rect, layer, att)
+        self.focused = False
+        self.moving = False
 
-class UIContainer:
-    def __init__(self, UIList):
-        self.UIList = UIList
-        self.active = False
-    
+    def userInput(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:
+                if self.rect.collidepoint(event.pos):
+                    self.focused = True
+                else:
+                    self.focused = False
+        if not self.focused:
+            return False
+        if event.type == pygame.MOUSEBUTTONUP:
+            if event.button == 1:
+                self.moving = False
+                self.focused = False
+        elif event.type == pygame.USEREVENT:
+            if event == LHold:
+                if self.moving:
+                    self.parent.nudge(event.rel)
+                elif self.rect.collidepoint(event.pos):
+                    self.moving = True
+                else:
+                    return False
+        else:
+            return False
+        return True
+class UIPanelResizer(UIElement):
+    def __init__(self, rect, layer, att):
+        UIElement.__init__(self, rect, layer, att)
+        self.focused = False
+        self.resizing = False
+
+    def userInput(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:
+                if self.rect.collidepoint(event.pos):
+                    self.focused = True
+                else:
+                    self.focused = False
+        if not self.focused:
+            return False
+        if event.type == pygame.MOUSEBUTTONUP:
+            if event.button == 1:
+                self.resizing = False
+                self.focused = False
+        elif event.type == pygame.USEREVENT:
+            if event == LHold:
+                if self.resizing:
+                    self.parent.resize(event.rel, True)
+                elif self.rect.collidepoint(event.pos):
+                    self.resizing = True
+                else:
+                    return False
+        else:
+            return False
+        return True
+class UIPanelCloser(UIButton):
+    def __init__(self, rect, layer, imgFile = None):
+        UIButton.__init__(self, rect, layer, "imag right ", self.func, imgFile)
+
+    def func(self):
+        #self.focused = False
+        self.parent.deactivate()
+
+class Panel(UIElement):
+    def __init__(self, rect, layer, att):
+        UIElement.__init__(self, rect, layer, att)
+        self.UIList = []
+        self.bounds = screen.get_rect()
+        self.focused = False
+
+    def nudge(self, relpos):
+        if self.rect.left + relpos[0] < self.bounds.left:
+            relpos = (self.bounds.left - self.rect.left, relpos[1])
+        elif self.rect.right + relpos[0] > self.bounds.right:
+            relpos = (self.bounds.right - self.rect.right, relpos[1]) 
+        self.rect.x += relpos[0]   
+                
+        if self.rect.top + relpos[1] < self.bounds.top:
+            relpos = (relpos[0], self.bounds.top - self.rect.top)
+        elif self.rect.bottom + relpos[1] > self.bounds.bottom:
+            relpos = (relpos[0],self.bounds.bottom -  self.rect.bottom)
+        self.rect.y += relpos[1]
+
+        for UIE in self.UIList:
+            UIE.nudge(relpos)
+        
+    def resize(self, size, inc = False):
+        if inc:
+            relsize = size
+            size = (self.rect.size[0] + size[0], self.rect.size[1] + size[1])
+        else:
+            relsize = (size[0] - self.rect.size[0], size[1] - self.rect.size[1])
+        if size[0] < 20:
+            size = (20, size[1])
+        if size[1] < 20:
+            size = (size[0], 20)
+
+        for UIE in self.UIList:
+            if "right " in UIE.att:
+                UIE.rect.right *= size[0]/self.rect.size[0]
+            else:
+                UIE.rect.left *= size[0]/self.rect.size[0]
+            if "bot" in UIE.att:
+                UIE.rect.bot *= size[1]/self.rect.size[1]
+            else:
+                UIE.rect.top *= size[1]/self.rect.size[1]
+            if "scale " in UIE.att:
+                UIE.resize(relsize, True)
+
+        self.rect.size = size
+
+
+
     def addUIE(self, UIE):
         if UIE not in self.UIList:
+            UIE.parent = self
+            UIE.nudge(self.rect.topleft)
             self.UIList.append(UIE)
-            
-
+    
     def remUIE(self, UIE):
         if UIE in self.UIList:
             self.UIList.remove(UIE)
-    
+
     def activate(self):
         self.active = True
         for UIE in self.UIList:
+            if hasattr(UIE, "focused"):
+                UIE.focused = False
             UIE.load()
     
     def deactivate(self):
@@ -310,8 +384,43 @@ class UIContainer:
         for UIE in self.UIList:
             UIE.unload()
 
-def inputStep(UIC:UIContainer):
+    def userInput(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:
+                if self.rect.collidepoint(event.pos):
+                    self.focused = True
+                    self.layer = maxLayers-1
+                    print("focused")
+                else:
+                    print("release")
+                    self.focused = False
+                    self.layer = self.defLayer
+            elif event.button == 3:
+                self.focused = False
+                self.layer = self.defLayer
+        if not self.focused:
+            return False        
+        update = 0
+        if event.type in userEvents:
+            hasFocus = False
+            for layer in reversed(range(maxLayers)):
+                for UIE in reversed(self.UIList):
+                    if UIE.layer == layer and UIE.active:
+                        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and hasattr(UIE, "focused"):
+                            if not hasFocus:
+                                update += UIE.userInput(event)
+                                hasFocus = UIE.focused
+                            else:
+                                UIE.focused = False
+                        else:
+                            update += UIE.userInput(event)
+        return update
+
+
+
+def inputStep(UICs):
     pygame.time.Clock().tick(30)
+    global winsize
         
     #TRACKS MOUSE X, Y ABSOLUTE AND RELATIVE POSITION. ONLY DO ONCE PER CYCLE
     mousePos = pygame.mouse.get_pos()
@@ -324,20 +433,11 @@ def inputStep(UIC:UIContainer):
     update = False
 
     for event in pygame.event.get():
-        if event.type in userEvents:
-            hasFocus = False
-            for layer in reversed(range(maxLayers)):
-                for UIE in reversed(UIC.UIList):
-                    if UIE.layer == layer and UIE.active:
-                        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and hasattr(UIE, "focused"):
-                            if not hasFocus:
-                                update += UIE.userInput(event)
-                                hasFocus = UIE.focused
-                            else:
-                                UIE.focused = False
-                        else:
-                            update += UIE.userInput(event)
-                        
+        for UIC in UICs:
+            if not UIC.active:
+                continue
+            update += UIC.userInput(event)
+        
         if event == LHold:
             LHPost = True
         elif event == MHold:
@@ -370,10 +470,18 @@ def inputStep(UIC:UIContainer):
                 MHPost = False
             elif event.button == 3:
                 RHPost = False
-        elif event.type == pygame.VIDEORESIZE or event.type == pygame.VIDEOEXPOSE:
-            for UIE in UIC.UIList:
-                if "winScale" in UIE.att and UIE.active:
-                    UIE.resize(screen.get_size())
+        elif event.type == pygame.WINDOWRESIZED or event.type == pygame.WINDOWRESTORED:
+            for UIC in UICs:
+                if UIC.active and "winscale " in UIC.att:
+                    relsize = (screen.get_rect().width - winsize[0], screen.get_rect().height - winsize[1])
+                    if "xwinscale " in UIC.att and "ywinscale " in UIC.att:
+                        UIC.resize(relsize, True)
+                    elif "xwinscale " in UIC.att:
+                        UIC.resize((relsize[0], UIC.rect.height), True)
+                    elif "ywinscale " in UIC.att:
+                        UIC.resize((UIC.rect.width, relsize[1]), True)
+                    UIC.bounds = screen.get_rect()
+                    winsize = screen.get_rect().size
             return False, False
         elif event.type == pygame.QUIT:
             return True, False
@@ -395,15 +503,18 @@ def inputStep(UIC:UIContainer):
 
     return False, True
 
-def renderStep(UIC:UIContainer):
+def renderStep(UICs):
     #SCREEN BACKGROUND COLOR
     screen.fill((0, 255, 255))
-    if not UIC.active:
-        return True, False
-
-    for layer in range(maxLayers):
-        for UIE in UIC.UIList:
-            if UIE.layer == layer and UIE.active:
-                screen.blit(UIE.surf, UIE.rect)
-    #RENDER FRAME ON SCREEN
+    for panelLayer in range(maxLayers):
+        for UIC in UICs:
+            if UIC.layer == panelLayer:
+                if not UIC.active:
+                    continue
+                for layer in range(maxLayers):
+                    for UIE in UIC.UIList:
+                        if UIE.layer == layer and UIE.active and UIE.surf is not None:
+                            screen.blit(UIE.surf, UIE.rect)
     pygame.display.flip()
+
+#def flip():
